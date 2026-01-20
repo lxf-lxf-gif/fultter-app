@@ -10,4 +10,17 @@ export default defineConfig({
     },
     hmr: true,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-ui': ['framer-motion', 'lucide-react', 'clsx', 'tailwind-merge'],
+          'vendor-charts': ['echarts', 'echarts-for-react'],
+          'vendor-utils': ['@google/generative-ai', 'react-markdown'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+  },
 })

@@ -9,6 +9,18 @@ class AIService {
         this.proxyEndpoint = (options.proxyEndpoint || "").trim();
     }
 
+    private normalizeModel(input: string) {
+        const m = String(input || '').trim();
+        if (!m) return m;
+
+        if (m.startsWith('gpt-') || m.startsWith('o1')) return m;
+        if (m.startsWith('gpt')) return `gpt-${m.slice('gpt'.length)}`;
+
+        if (/^\d+(?:\.\d+)*$/.test(m)) return `gpt-${m}`;
+        if (/^4o(?:-.+)?$/.test(m)) return `gpt-${m}`;
+        return m;
+    }
+
     async generateSEOContentStream(
         model: string,
         topic: string,
@@ -79,7 +91,7 @@ Keywords to include: ${keywords.join(", ")}.
 Output language: ${language}.
 Strictly use Markdown format.`;
 
-        await this.callGeminiStream(model, systemInstruction, userPrompt, enableThinking, onChunk, signal);
+        await this.callGeminiStream(this.normalizeModel(model), systemInstruction, userPrompt, enableThinking, onChunk, signal);
     }
 
     async generateContinuationStream(
@@ -103,7 +115,7 @@ ${anchorTexts.map(a => `  - "${a.keyword}" -> ${a.url}`).join("\n")}
         const systemInstruction = `并在内容规划师、SEO写作专家、数据可视化专家等多重专家角色的指导下，继续续写这篇 ${language} 文章。请保持一致的专业深度、行业洞察力及 **Markdown** 排版风格（包括必要的 \`\`\`echarts\`\`\` 图表块）。严禁重复已有内容。必须使用 ${language} 输出。${linkingStrategy}${memories.length > 0 ? `\n\nUSER MEMORIES & PREFERENCES:\n${memories.map(m => `- ${m}`).join('\n')}` : ''}`;
         const userPrompt = `Existing Content (in ${language}):\n---\n${previousContent}\n---\n\nPlease continue writing the article strictly in ${language} using Markdown format:`;
 
-        await this.callGeminiStream(model, systemInstruction, userPrompt, enableThinking, onChunk, signal);
+        await this.callGeminiStream(this.normalizeModel(model), systemInstruction, userPrompt, enableThinking, onChunk, signal);
     }
 
     async generateImage(prompt: string, model: string = "gemini-2.5-flash-image", aspectRatio: string = "16:9"): Promise<string> {
@@ -210,6 +222,11 @@ ${anchorTexts.map(a => `  - "${a.keyword}" -> ${a.url}`).join("\n")}
         onChunk: (chunk: string) => void,
         signal?: AbortSignal
     ): Promise<void> {
+        if (this.shouldUseServerlessProxy()) {
+            const text = await this.callViaServerless(model, systemInstruction, userPrompt, enableThinking, signal);
+            if (text) onChunk(text);
+            return;
+        }
         // if (!this.proxyToken) throw new Error("Proxy token is missing. Please check your settings.");
 
         const endpoint = (this.proxyEndpoint || "https://api.vectorengine.ai").replace(/\/+$/, "");
@@ -287,9 +304,12 @@ ${anchorTexts.map(a => `  - "${a.keyword}" -> ${a.url}`).join("\n")}
             "Accept": "text/event-stream",
         };
         if (this.proxyToken) {
-            headers["Authorization"] = `Bearer ${this.proxyToken}`;
-            headers["X-API-Key"] = this.proxyToken;
-            headers["x-goog-api-key"] = this.proxyToken;
+            if (urlObj.hostname === 'generativelanguage.googleapis.com') {
+                headers['x-goog-api-key'] = this.proxyToken;
+            } else {
+                headers["Authorization"] = `Bearer ${this.proxyToken}`;
+                headers['X-API-Key'] = this.proxyToken;
+            }
         }
 
         const response = await fetch(urlObj.toString(), {
@@ -376,6 +396,9 @@ ${anchorTexts.map(a => `  - "${a.keyword}" -> ${a.url}`).join("\n")}
         enableThinking: boolean,
         signal?: AbortSignal
     ): Promise<string> {
+        if (this.shouldUseServerlessProxy()) {
+            return this.callViaServerless(model, systemInstruction, userPrompt, enableThinking, signal);
+        }
         const endpoint = (this.proxyEndpoint || "https://api.vectorengine.ai").replace(/\/+$/, "");
         const isOpenAI = model.startsWith("gpt") || model.startsWith("o1");
 
@@ -434,9 +457,12 @@ ${anchorTexts.map(a => `  - "${a.keyword}" -> ${a.url}`).join("\n")}
             "Accept": "application/json",
         };
         if (this.proxyToken) {
-            headers["Authorization"] = `Bearer ${this.proxyToken}`;
-            headers["X-API-Key"] = this.proxyToken;
-            headers["x-goog-api-key"] = this.proxyToken;
+            if (urlObj.hostname === 'generativelanguage.googleapis.com') {
+                headers['x-goog-api-key'] = this.proxyToken;
+            } else {
+                headers["Authorization"] = `Bearer ${this.proxyToken}`;
+                headers['X-API-Key'] = this.proxyToken;
+            }
         }
 
         const response = await fetch(urlObj.toString(), {
@@ -467,6 +493,67 @@ ${anchorTexts.map(a => `  - "${a.keyword}" -> ${a.url}`).join("\n")}
             return parts.map((p: any) => p?.text || "").join("");
         }
         return "";
+    }
+
+    private shouldUseServerlessProxy(): boolean {
+        if (typeof window === 'undefined') return false;
+        const host = window.location.hostname;
+        if (host === 'localhost' || host === '127.0.0.1') return false;
+
+        try {
+            const targetOrigin = new URL(this.proxyEndpoint || 'https://api.vectorengine.ai').origin;
+            return targetOrigin !== window.location.origin;
+        } catch {
+            return true;
+        }
+    }
+
+    private async callViaServerless(
+        model: string,
+        systemInstruction: string,
+        userPrompt: string,
+        enableThinking: boolean,
+        signal?: AbortSignal
+    ): Promise<string> {
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+        };
+        if (this.proxyToken) headers.Authorization = `Bearer ${this.proxyToken}`;
+
+        const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers,
+            signal,
+            body: JSON.stringify({
+                model,
+                systemInstruction,
+                userPrompt,
+                enableThinking,
+                proxyEndpoint: this.proxyEndpoint || 'https://api.vectorengine.ai',
+            }),
+        });
+
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("text/html")) {
+            throw new Error("API 路径配置错误：请求被重定向到了 index.html，请检查 vercel.json 配置");
+        }
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const upstreamStatus = data?.upstreamStatus;
+            const statusText = upstreamStatus ? `Upstream ${upstreamStatus}` : `API ${response.status}`;
+            const msg = data?.error || response.statusText || 'Request failed';
+            const tried = Array.isArray(data?.triedModels) ? data.triedModels.filter((x: any) => typeof x === 'string') : [];
+            const triedSuffix = tried.length ? `\n\n已尝试模型：${tried.join(', ')}` : '';
+            throw new Error(`${statusText}: ${msg}${triedSuffix}`);
+        }
+        const usedModel = data?.usedModel;
+        const text = data?.text || '';
+        if (usedModel && typeof usedModel === 'string' && usedModel.trim() && usedModel !== model) {
+            return `> ⚠️ 模型不可用，已自动切换为：${usedModel}\n\n${text}`;
+        }
+        return text;
     }
 }
 

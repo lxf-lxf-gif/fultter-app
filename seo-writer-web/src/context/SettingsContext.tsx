@@ -7,7 +7,7 @@ const defaultSettings: SettingsState = {
   proxyEndpoint: 'https://api.vectorengine.ai',
   model: 'gemini-2.0-flash-exp',
 
-  imageModel: 'gemini-2.0-flash-exp',
+  imageModel: 'gemini-2.5-flash-image',
   
   isManualModel: false,
   language: 'Chinese',

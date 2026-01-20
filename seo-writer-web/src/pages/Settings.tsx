@@ -142,8 +142,7 @@ const Settings: React.FC = () => {
                   onChange={(e) => updateSettings({ imageModel: e.target.value })}
                   options={[
                       { label: "Gemini 2.5 Flash Image (默认)", value: "gemini-2.5-flash-image" },
-                      { label: "Imagen 3 (Generate 001)", value: "imagen-3.0-generate-001" },
-                      { label: "Gemini 2.0 Flash Experimental", value: "gemini-2.0-flash-exp" },
+                      { label: "Gemini 2.5 Flash Image Preview", value: "gemini-2.5-flash-image-preview" },
                   ]}
                   fullWidth
                />

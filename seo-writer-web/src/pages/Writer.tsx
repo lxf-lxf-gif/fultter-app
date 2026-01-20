@@ -358,6 +358,11 @@ const Writer: React.FC = () => {
       return;
     }
 
+    if (provider === 'proxy' && !settings.proxyToken) {
+      showToast('请先在设置里填写 Proxy Token', 'error');
+      return;
+    }
+
     // if (provider === 'proxy' && !settings.proxyToken) {
     //   alert('Please enter Proxy token (in Settings)');
     //   setShowConfig(true);
@@ -454,9 +459,9 @@ const Writer: React.FC = () => {
       if (errorMsg.includes('User location is not supported')) {
         errorMsg = '❌ 访问受限：Gemini API 不支持您当前的地区。请尝试开启全局代理（如美国/日本节点）或切换到 OpenAI 提供的模型。';
       } else if (errorMsg.includes('404') || errorMsg.includes('not found')) {
-        errorMsg = `❌ 模型 ID 未找到 (404 Error)：\n\n当前的模型 ID "${settings.model}" 在您的 API 权限中暂未启用或尚未在该区域上线。`;
+        errorMsg = `❌ 模型不可用 (404 Error)：\n\n${errorMsgRaw}`;
       } else if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
-        errorMsg = `❌ 网络连接失败 (Network Error)：\n\n1. 请检查您的网络连接。\n2. 如果您在中国大陆使用 Google 官方渠道，请确保已开启全局代理 (VPN)。\n3. 如果使用代理渠道，可能是跨域 (CORS) 问题或代理地址不可用。建议在 Chrome 控制台 (F12) 查看具体报错。`;
+        errorMsg = `❌ 网络连接失败 (Network Error)：\n\n1. 请检查您的网络连接。\n2. 如果您在中国大陆使用 Google 官方渠道，请确保已开启全局代理 (VPN)。\n3. 如果使用代理渠道，可能是跨域 (CORS) 问题、代理地址不可用，或本站 /api/generate 被拦截。\n\n原始错误：${errorMsgRaw}`;
       }
       setResult(`错误信息：\n\n${errorMsg}`);
     } finally {
@@ -468,7 +473,10 @@ const Writer: React.FC = () => {
 
   const handleContinue = async (provider: AIProvider = activeProvider) => {
     if (!result) return;
-    // if (provider === 'proxy' && !settings.proxyToken) return;
+    if (provider === 'proxy' && !settings.proxyToken) {
+      showToast('请先在设置里填写 Proxy Token', 'error');
+      return;
+    }
 
     setIsGenerating(true);
 
